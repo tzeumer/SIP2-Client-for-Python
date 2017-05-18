@@ -188,7 +188,9 @@ class Sip2Wrapper:
         in the name.  Upon successful login, it sets the inPatronSession property to 
         True, otherwise False.
         @param string $patronId Patron login ID
-        @param string $patronPass Patron password; may be empty if ACS allows it
+        @param string $patronPass Patron password; may be empty. If you don't 
+                                  want to accept logins without password then make
+                                  sure that patronPass is never empty!
         @return boolean returns true on successful login, false otherwise
         """
         # Always end previous sessions
@@ -220,10 +222,13 @@ class Sip2Wrapper:
 
     def get_patron_isValid(self):
         """ Parses patron status to determine if login was successful.
+        @note 2017-05-18: If the patron password is empty then CQ (valid password)
+        always must be false ('N'). Your must take care that your app/implemen-
+        tation does not accept empty passwords if you don't want them.  
         @return boolean returns true if valid, false otherwise
         """
         patronStatus = self.get_patron_status()
-        if (patronStatus['variable']['BL'][0] != 'Y' or patronStatus['variable']['CQ'][0] != 'Y'):
+        if (patronStatus['variable']['BL'][0] != 'Y' or (self._sip2.patronpwd != '' and patronStatus['variable']['CQ'][0] != 'Y')):
             return False
 
         return True
@@ -580,14 +585,25 @@ class Sip2Wrapper:
 
 
     def sip_patron_status(self):
-        """ Method to grab the patron status from the server and store it in _patronStatus (code 23/24)
+        """ Method to grab the patron status from the server and store it in _patronStatus 
+        (code 63/64). Automatic fallback to Sip1 (code 23/24) 
+        @todo 2017-05-18: Any good reason to add an option to force 23/24 and 
+        not use the better option?
         @return Sip2Wrapper returns $this
         """
         if (self._command_available(0) == False): return False
-        msg  = self._sip2.sip_patron_status_request()
-        info = self._sip2.sip_patron_status_response(self._sip2.get_response(msg))
-        self._patronStatus = info
-        return info
+        
+        # Prefer Sip2 above Sip1 and use the improved variant 63/64 if supported
+        info = self.sip_patron_information()
+        if info != False:
+            self._patronStatus = info
+            return info
+        # Otherwise use Sip1 variant
+        else: 
+            msg  = self._sip2.sip_patron_status_request()
+            info = self._sip2.sip_patron_status_response(self._sip2.get_response(msg))
+            self._patronStatus = info
+            return info
 
 
     def sip_item_renew(self, itemIdentifier = '', titleIdentifier = '', itemProperties = '', feeAcknowledged= 'N', noBlock = 'N', nbDuDate = '', thirdPartyAllowed = 'N'):

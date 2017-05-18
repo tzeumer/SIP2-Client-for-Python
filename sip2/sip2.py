@@ -1160,6 +1160,8 @@ class Sip2:
         """ Generate Patron Status (code 23) request messages in sip2 format
         @return string         SIP2 request message
         
+        @note This message requires a patron password. If possble (not Sip1) use
+        the advanced version sip_patron_information_request() (63) 
         @note SIP2 Protocol definition document:        
         This message is used by the SC to request patron information from the 
         ACS. The ACS must respond to this command with a Patron Status Response 
@@ -1182,6 +1184,8 @@ class Sip2:
         @param  string response    response string from the SIP2 backend
         @return array              parsed SIP2 response message
         
+        @note This message requires a patron password. If possble (not Sip1) use
+        the advanced version sip_patron_information_response() (64) 
         @note SIP2 Protocol definition document:        
         The ACS must send this message in response to a Patron Status Request 
         message as well as in response to a Block Patron message.
