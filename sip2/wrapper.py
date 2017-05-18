@@ -193,7 +193,7 @@ class Sip2Wrapper:
         """
         # Always end previous sessions
         if (self._inPatronSession):
-            self.endPatronSession()
+            self.sip_patron_session_end()
             
         self._sip2.patron    = patronId
         self._sip2.patronpwd = patronPass
