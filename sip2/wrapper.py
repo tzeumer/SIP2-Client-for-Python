@@ -37,6 +37,9 @@ class Sip2Wrapper:
         'scLocation'     : 'My Test SC Location',
         'patron'         : '12345',
         'patronpwd'      : 'secret',
+        'logfile_path'   : '',
+        'loglevel'       : 'WARNING',
+        
     }
     
     @example 2: And now a complete initialization example (with reduced config 
@@ -74,8 +77,6 @@ class Sip2Wrapper:
     # Before shutting down device, logout
     wrapper.disconnect()
 
-    # Show log
-    print (wrapper.return_log()) 
     """
 
     def __init__(self, sip2Params = {}, autoConnect = True, version = 'Sip2'):
@@ -125,9 +126,6 @@ class Sip2Wrapper:
         if autoConnect:
             self.connect()
 
-        # TEMP FOR TEST
-        self._sip2.log = 'New Wrapper Object Ready\n'
-
 
     def __del__(self):
         """ Reset everything, make sure client is disconnected """
@@ -144,7 +142,7 @@ class Sip2Wrapper:
         """
         self._connected = self._sip2.connect()
 
-        # You might check via debug output or self._sip2.log what went wrong
+        # You might check via debug output or the log file what went wrong
         return self._connected
 
 
@@ -332,10 +330,6 @@ class Sip2Wrapper:
         return {}
 
    
-    def return_log(self):
-        """ getter for Sip2 class log """ 
-        return self._sip2.log
-    
     def return_last_request(self):
         """ getter for Sip2 class last_request """ 
         return self._sip2.last_request
@@ -398,20 +392,20 @@ class Sip2Wrapper:
         )
         
         if self._scStatus['variable']['BX'][0][sm_id:sm_id + 1] != 'Y':
-            self._sip2._logger(self._sip2._version + "-Wrapper: Server does not support command %s (no message sent)\n" % supported_messages[sm_id])
+            self._sip2.log.warning("Wrapper: Server does not support command %s (no message sent)" % supported_messages[sm_id])
             return False
         elif isinstance(self._patronStatus, dict) == True:
             if sm_id == 1 and self._patronStatus['fixed']['PatronStatus'][0:0 + 1] != 'Y':   
                 # patron may not charge items
-                self._sip2._logger(self._sip2._version + "-Wrapper: Patron restriction: %s (no message sent)\n" % patron_status[0])
+                self._sip2.log.warning("Wrapper: Patron restriction: %s (no message sent)" % patron_status[0])
                 return False
             elif sm_id == 13 and self._patronStatus['fixed']['PatronStatus'][3:3 + 1] != 'Y':
                 # patron may not hold items   
-                self._sip2._logger(self._sip2._version + "-Wrapper: Patron restriction: %s (no message sent)\n" % patron_status[3])
+                self._sip2.log.warning("Wrapper: Patron restriction: %s (no message sent)" % patron_status[3])
                 return False
             elif sm_id in (14,15) and self._patronStatus['fixed']['PatronStatus'][1:1 + 1] != 'Y':
                 # patron may not renew items
-                self._sip2._logger(self._sip2._version + "-Wrapper: Patron restriction: %s (no message sent)\n" % patron_status[1])
+                self._sip2.log.warning("Wrapper: Patron restriction: %s (no message sent)" % patron_status[1])
                 return False
         else:
             return True

@@ -5,6 +5,10 @@ import socket, ssl
 from _socket import SHUT_RDWR
 import sys
 
+import logging
+from logging.handlers import TimedRotatingFileHandler
+import os.path
+
 class Sip2:
     """ SIP2 Class
     This class provides a method of communicating with an Integrated Library
@@ -58,9 +62,10 @@ class Sip2:
 
         ...
 
-        # Disconnect and print log
+        # Disconnect
         mySip.disconnect()
-        print (mySip.log)
+        
+        # You might check the sip2.log in you path/working dir        
 
     @package
     @license    MIT License
@@ -99,8 +104,6 @@ class Sip2:
 
 
         """Public SIP variables (...which you will probably never change)"""
-        self.log            = ''
-        # @var string      Log of communication actions
         self.last_request    = ''
         # @var string      Last message sent to ACS
         self.last_response   = ''
@@ -144,6 +147,14 @@ class Sip2:
         # @var string      Internal message build buffer
         self._seq           = -1
         # @var integer     Internal sequence number
+
+        """Public logging variables """
+        self.log            = None
+        # @var object      Logger object. Log of communication actions
+        self.logfile_path   = ''
+        # @var string      Path where to write to the logfile. Exampele: 'c:\\temp'
+        self.loglevel       = 'DEBUG'
+        # @var string      Loglevel (DEBUG, INFO, WARNING, ERROR, CRITICAL)
 
 
     def __del__(self):
@@ -190,7 +201,7 @@ class Sip2:
         # adds a varaiable length option to the message, and also prevents adding addtional fixed fields
         if (optional == True and value == ''):
             # skipped
-            self._logger(self._version + ": --- SKIPPING OPTIONAL FIELD --- '%s'\n" % field)
+            self.log.info("--- SKIPPING OPTIONAL FIELD --- '%s'" % field)
         else:
             self._noFixed   = True; # no more fixed for this message
             self._rqstBuild += field + str(value)[0:255] + self.fldTerminator;
@@ -336,15 +347,40 @@ class Sip2:
         return datetime.datetime.fromtimestamp(timestamp).strftime('%Y%m%d    %H%M%S')
 
 
-    def _logger(self, message):
+    def _init_logger(self):
         """ Handle the printing of debug messages
         @param  string message     The message text
         """
-        self.log += '{:%Y-%m-%d %H:%M:%S}'.format(datetime.datetime.now()) + ' ' + message
+        #logentry = '{:%Y-%m-%d %H:%M:%S}'.format(datetime.datetime.now()) + ' ' + message
+        message = 'Started logging with loglevel ' + self.loglevel
+        
+        # Configure logger
+        filename = 'sip2.log'
+        if os.path.exists(self.logfile_path):
+            logfile  = os.path.join(self.logfile_path, filename)
+        else:
+            message += ' Custom log file path not set or does not exist. Using default: ' + os.getcwd()
+            logfile  = os.path.join(os.getcwd(), filename)
 
-        # custom debug function,  why repeat the check for the debug flag in code...
-        #if (self.debug):
-            #trigger_error( $message, E_USER_NOTICE);
+        # Set configuration
+        self.log = logging.getLogger(self._version)
+ 
+        # set level       
+        # https://stackoverflow.com/a/15368084
+        level = logging.getLevelName(self.loglevel)
+        self.log.setLevel(level)
+        
+        # Formatting
+        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        #, datefmt='%Y-%m-%d %H:%M:%'
+
+        # Rotating 
+        handler = TimedRotatingFileHandler(logfile, when="midnight", interval=1, backupCount=31)
+        handler.setFormatter(formatter)
+        self.log.addHandler(handler)
+
+        # Log to file (for now always debug
+        self.log.warning(message)              
 
 
     def connect(self):
@@ -354,6 +390,10 @@ class Sip2:
             - PHP 5.6+ has context option "allow_self_signed" - check if Python adds it too later on
         @return bool               The socket connection status
         """
+        # Initialize logger on first connect
+        if self.log == None:
+            self._init_logger()
+        
         # Check that basic parameters are right
         if self.hostName == '':
             raise ValueError("Cannot autoconnect. No host set (parameter: hostName): '%s'" % self.hostName)
@@ -361,7 +401,7 @@ class Sip2:
             raise ValueError("Cannot autoconnect. No port set (parameter: hostPort) or not a valid integer: '%s'" % self.hostPort)
 
 
-        self._logger(self._version + ": --- BEGIN SIP communication ---\n")
+        self.log.info("--- BEGIN SIP communication ---")
         mode = False
 
         """ Check if host is reachable at all """
@@ -369,31 +409,30 @@ class Sip2:
         plain.settimeout(self.socketTimeout)
         try:
             plain.connect((self.hostName, self.hostPort))
-            self._logger(self._version + ": --- SOCKET EXISTS ---\n")
+            self.log.info("--- SOCKET EXISTS ---")
             mode = 'plain'
         except socket.timeout:
-            self._logger(self._version + ": --- CONNECTION ERROR: Host not reachable. ---\n")
-            print (self.log)
+            self.log.critical("--- CONNECTION ERROR: Host not reachable. ---")
             sys.exit(1)
         except socket.error as e:
             """Socket exceptions suck, because they may vary by OS?"""
             #print (str(e.errno) + ' ' + e.strerror)
             if (e.errno == 10061 or e.strerror.find('refused') > 0):
-                self._logger(self._version + ": --- CONNECTION ERROR: Possibly wrong port. %s ---\n" % e)
+                self.log.critical("--- CONNECTION ERROR: Possibly wrong port. %s ---" % e)
                 # Ask user to correct name/port
             elif (e.errno == 11001 or e.strerror.find('getaddrinfo') > 0):
-                self._logger(self._version + ": --- CONNECTION ERROR: Possibly wrong host name. %s ---\n" % e)
+                self.log.critical("--- CONNECTION ERROR: Possibly wrong host name. %s ---" % e)
                 # Ask user to correct name/port
             elif (e.errno == 10060 or e.strerror.find('period of time') > 0):
-                self._logger(self._version + ": --- CONNECTION ERROR: Host not reachable. %s ---\n" % e)
+                self.log.critical("--- CONNECTION ERROR: Host not reachable. %s ---" % e)
             else:
-                self._logger(self._version + ": --- CONNECTION ERROR: I got no clue. %s ---\n" % e)
+                self.log.critical("--- CONNECTION ERROR: I got no clue. %s ---" % e)
             print (self.log)
             sys.exit(1)
 
         # return socket if TLS is explicitly disabled
         if (self.tlsEnable == False):
-            self._logger(self._version + ": --- CONNECTION ESTABLISHED: Unencrypted ---\n")
+            self.log.warning("--- CONNECTION ESTABLISHED: Unencrypted ---")
             self._socket = plain
             return True
 
@@ -422,22 +461,22 @@ class Sip2:
         except ssl.SSLError as e:
             #print (str(e.errno) + ' --- ' + e.strerror)
             if  (e.strerror.find('unknown protocol') > 0):
-                self._logger(self._version + ": --- CONNECTION INFO: SSL is not supported by host (using plain connection). %s ---\n" % e)
+                self.log.warning("--- CONNECTION INFO: SSL is not supported by host (using plain connection). %s ---" % e)
             elif  (e.strerror.find('wrong version') > 0):
                 # seems always to be the case if no ssl _and_ higher than PROTOCOL_SSLv23 selected
-                self._logger(self._version + ": --- CONNECTION INFO: SSL seems not to be supported (using plain connection). Slight chance that is only a misconfiguration in Sip2 module.  %s ---\n" % e)
+                self.log.warning("--- CONNECTION INFO: SSL seems not to be supported (using plain connection). Slight chance that is only a misconfiguration in Sip2 module.  %s ---" % e)
             elif  (e.strerror.find('verify failed') > 0):
                 # seems always to be the case if no ssl _and_ higher than PROTOCOL_SSLv23 selected
-                self._logger(self._version + ": --- CONNECTION INFO: SSL - Server probably uses self signed certificate (or invalid!).\n") # %s ---\n" % e)
+                self.log.warning("--- CONNECTION INFO: SSL - Server probably uses self signed certificate (or invalid!).") # %s ---\n" % e)
                 mode = 'tls_untrusted'
             else:
-                self._logger(self._version + ": --- CONNECTION INFO: Some unkown error testing for SSL. %s ---\n" % e)
+                self.log.critical("--- CONNECTION INFO: Some unkown error testing for SSL. %s ---" % e)
 
         """ If we want to allow self signed certificates, get the server cert and use it as trusted ca """
         if (mode == 'tls_untrusted' and self.tlsAcceptSelfsigned == True):
             pem = ssl.get_server_certificate((self.hostName, self.hostPort))
             if not pem:
-                self._logger(self._version + ": --- CONNECTION ERROR: SSL server certificate unavailable though assumed it must exist. %s ---\n" % e)
+                self.log.warning("--- CONNECTION ERROR: SSL server certificate unavailable though assumed it must exist. %s ---" % e)
             else:
                 # Seems like we have to start over again with new context
                 plain = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -459,7 +498,7 @@ class Sip2:
                 # Only way to get plaintext of certificate without 3rd party modules like M2Crypto or OpenSSL
                 cert_plain = sslSock.getpeercert()
                 if (cert_plain['issuer'] == cert_plain['subject']):
-                    self._logger(self._version + ": --- CONNECTION INFO: SSL - Certificate issuer and subject are identical. It is self signed.\n")
+                    self.log.warning("--- CONNECTION INFO: SSL - Certificate issuer and subject are identical. It is self signed.")
                 # even more checking (we already know subject = issuer, so it doesn't matter wich we check
                 # it's a manual version of context.check_hostname  = True
                 for field in cert_plain['subject']:
@@ -468,27 +507,27 @@ class Sip2:
                         if certhost != self.hostName:
                             raise ssl.SSLError("Host name '%s' doesn't match certificate host '%s'" % (self.hostName, certhost))
                         else:
-                            self._logger(self._version + ": --- CONNECTION INFO: SSL - Certificate issuer[commonName] and subject[commonName] are identical. It is self signed.\n")
+                            self.log.warning("--- CONNECTION INFO: SSL - Certificate issuer[commonName] and subject[commonName] are identical. It is self signed.")
                 #print (pem)
         elif (mode == 'tls_untrusted' and self.tlsAcceptSelfsigned == False):
-                self._logger(self._version + ": --- CONNECTION ERROR: SSL server seems to use self signed certificate that cannot be accepted (set tlsAcceptSelfsigned = True to change) ---\n")
+                self.log.critical("--- CONNECTION ERROR: SSL server seems to use self signed certificate that cannot be accepted (set tlsAcceptSelfsigned = True to change) ---")
                 mode = False
 
         """ Finish connection """
         if (mode == 'plain'):
-            self._logger(self._version + ": --- CONNECTION ESTABLISHED: Unencrypted ---\n")
+            self.log.warning("--- CONNECTION ESTABLISHED: Unencrypted ---")
             self._socket = plain
             return True
         elif (mode == 'tls'):
-            self._logger(self._version + ": --- CONNECTION ESTABLISHED: Encrypted (Valid host, valid known CA, valid certificate) ---\n")
+            self.log.info("--- CONNECTION ESTABLISHED: Encrypted (Valid host, valid known CA, valid certificate) ---")
             self._socket = sslSock
             return True
         elif (mode == 'tls_untrusted'):
-            self._logger(self._version + ": --- CONNECTION ESTABLISHED: Encrypted (Self Signed - Valid host = valid CA => valid certificate) ---\n")
+            self.log.warning("--- CONNECTION ESTABLISHED: Encrypted (Self Signed - Valid host = valid CA => valid certificate) ---")
             self._socket = sslSock
             return True
         else:
-            self._logger(self._version + ": --- CONNECTION FAILED ---\n")
+            self.log.critical("--- CONNECTION FAILED ---")
             return False
 
 
@@ -500,7 +539,7 @@ class Sip2:
         if (self._socket != None):
             self._socket.shutdown(SHUT_RDWR)
             self._socket.close()
-            self._logger(self._version + ": --- CONNECTION CLOSED ---\n")
+            self.log.info("--- CONNECTION CLOSED ---")
             self._socket = None
 
         return True
@@ -514,13 +553,13 @@ class Sip2:
         # Set user defined socket timeout
         self._socket.settimeout(self.socketTimeout)
 
-        self._logger(self._version + ": --- SENDING REQUEST --- \n%s" % request)
+        self.log.info("--- SENDING REQUEST --- \n%s" % request)
         try:
             #Send complete string at once
             self._socket.sendall(bytes(request, self.hostEncoding))
-            self._logger(self._version + ": --- REQUEST SENT, WAITING FOR RESPONSE: --- \n")
+            self.log.info("--- REQUEST SENT, WAITING FOR RESPONSE ---")
         except socket.error as e:
-            self._logger(self._version + ": --- SENDING REQUEST FAILED --- \n%s" % e)
+            self.log.warning("--- SENDING REQUEST FAILED --- \n%s" % e)
             #sys.exit()
 
         # \x0A is the escaped hexadecimal Line Feed. The equivalent of \n.
@@ -528,23 +567,23 @@ class Sip2:
         #$result = stream_get_line((stream_socket_client($this->socket_protocol.'://'.$this->hostname.':'.$this->port, $this->socket_error_id, $this->socket_error_msg, $this->socketTimeout, STREAM_CLIENT_CONNECT|STREAM_CLIENT_PERSISTENT, $context)), 100000, "\x0D");
         response = self._socket.recv(4096).decode(encoding = self.hostEncoding)
 
-        self._logger(self._version + ": --- RESPONSE RECEIVED  --- \n%s" % response)
+        self.log.info("--- RESPONSE RECEIVED  --- \n%s" % response)
 
         # test request for CRC validity
         if (self._crc_verify(response) == True):
             # reset the retry counter on successful send
             self._retryCount = 0
-            self._logger(self._version + ": --- Message from ACS passed CRC check ---\n")
+            self.log.info("--- Message from ACS passed CRC check ---")
         else:
             # CRC check failed, request a resend
             self._retryCount += 1;
             if (self._retryCount < self.maxretry):
                 # try again
-                self._logger(self._version + ": --- Message failed CRC check, retrying --- (%s)\n" % self._retryCount)
+                self.log.warning("--- Message failed CRC check, retrying --- (%s)" % self._retryCount)
                 self.get_response(request)
             else:
                 # give up
-                self._logger(self._version + ": --- Failed to get valid CRC --- after (%s) retries.\n" % self._retryCount)
+                self.log.critical("--- Failed to get valid CRC --- after (%s) retries." % self._retryCount)
                 return False
 
         # Keep last message and response as property
@@ -774,12 +813,12 @@ class Sip2:
         """
         if (feeType > 99 or feeType < 1):
             # not a valid fee type - exit
-            self._logger(self._version + ": (sip_fee_paid_request) Invalid fee type: %s" % feeType)
+            self.log.error("(sip_fee_paid_request) Invalid fee type: %s" % feeType)
             return False
 
         if (paymentType > 99 or paymentType < 0):
             # not a valid payment type - exit
-            self._logger(self._version + ": (sip_fee_paid_request) Invalid payment type: %s" % feeType)
+            self.log.error("(sip_fee_paid_request) Invalid payment type: %s" % feeType)
             return False
 
         self._request_new('37');
@@ -841,7 +880,7 @@ class Sip2:
         """
         if (holdMode == '' or (holdMode in '-+*') == False):
             # not a valid mode - exit
-            self._logger( self._version + ": Invalid hold mode: %s" % holdMode)
+            self.log.error( self._version + ": Invalid hold mode: %s" % holdMode)
             return False
 
         """ Valid hold types range from 1 - 9
@@ -849,7 +888,7 @@ class Sip2:
         4   any copy at a single branch or location
         """
         if (holdType != '' and (holdType < 1 or holdType > 9)):
-            self._logger( self._version + ": Invalid hold type code: %s" % holdType)
+            self.log.error( self._version + ": Invalid hold type code: %s" % holdType)
             return False
 
         self._request_new('15')
@@ -1349,7 +1388,7 @@ class Sip2:
             99<status code><max print width><protocol version>
         """
         if (statusCode < 0 or statusCode > 2):
-            self._logger(self._version + ": Invalid status code passed to sip_sc_status_request")
+            self.log.error("Invalid status code passed to sip_sc_status_request")
             return False
 
         self._request_new('99')
