@@ -193,7 +193,11 @@ class Sip2Wrapper:
                                   sure that patronPass is never empty!
         @return boolean returns true on successful login, false otherwise
         """
-        # Always end previous sessions
+        # Always reset data from failed logins where no session was created
+        self._patronStatus      = None
+        self._patronInfo        = None
+        
+        # Always end previous sessions (from successful login)
         if (self._inPatronSession):
             self.sip_patron_session_end()
             
@@ -227,8 +231,8 @@ class Sip2Wrapper:
         tation does not accept empty passwords if you don't want them.  
         @return boolean returns true if valid, false otherwise
         """
-        patronStatus = self.get_patron_status()
-        if (patronStatus['variable']['BL'][0] != 'Y' or (self._sip2.patronpwd != '' and patronStatus['variable']['CQ'][0] != 'Y')):
+        self.get_patron_status()
+        if (self._patronStatus['variable']['BL'][0] != 'Y' or (self._sip2.patronpwd != '' and self._patronStatus['variable']['CQ'][0] != 'Y')):
             return False
 
         return True
@@ -473,6 +477,8 @@ class Sip2Wrapper:
         if ((info['fixed']['EndSession'] > 'Y') - (info['fixed']['EndSession'] < 'Y')) != 0:
             raise RuntimeError('Error ending patron session')
         self._inPatronSession   = False
+        # @todo: Might be a bit redundant because it is reset on each login. 
+        #        Cleaner on the other hand, isn't it? 
         self._patronStatus      = None
         self._patronInfo        = None
         return self
