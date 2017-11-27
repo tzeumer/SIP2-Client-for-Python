@@ -23,6 +23,14 @@ class Sip2:
     - The protocol definition by 3m can be downloaded here:
       http://mws9.3m.com/mws/mediawebserver.dyn?6666660Zjcf6lVs6EVs66S0LeCOrrrrQ-
     - Methods in this class follow the convention 
+    
+    @note: Connection errors
+    The class has two places, where a ConnectionError might be raised. It might
+    happen on the initial connection attempt: connect(). The second possibility
+    a connection was established but got lost later on. Then the same error will
+    be raised in get_response(). Assuming the connection data is correct, then
+    a reconnect trial loop probably would be the best option to handle this 
+    exception in the implementing class.    
 
     @Example:
         from sip2 import Gossip (or Sip2)
@@ -163,6 +171,13 @@ class Sip2:
             self.disconnect()
         finally:
             print ('Sip2 object unset')
+            
+    def __exit__(self):
+        """ Make sure sockets are always closed """
+        try:
+            self.disconnect()
+        finally:
+            print ('Sip2 object unset')
 
 
     def _request_new(self, code):
@@ -185,9 +200,6 @@ class Sip2:
             return False;
         else:
             self._rqstBuild += '{:<{width}}'.format(str(value)[0:length], width=length)
-            #'{mystr:{fill}{width}}'.format(mystr=value[0:len], fill=' ', width=len)
-            #"%{len}s" % value[0:len]
-            #sprintf("%{len}s", value[0:len]);
             return True
 
 
@@ -198,7 +210,7 @@ class Sip2:
         @param bool    optional    optional field designation (default False)
         @return bool
         """
-        # adds a varaiable length option to the message, and also prevents adding addtional fixed fields
+        # adds a variable length option to the message, and also prevents adding additional fixed fields
         if (optional == True and value == ''):
             # skipped
             self.log.info("--- SKIPPING OPTIONAL FIELD --- '%s'" % field)
@@ -213,8 +225,7 @@ class Sip2:
         """ Manage the internal sequence number and return the next in the list
         @return int            internal sequence number
         """
-        # Get a sequence number for the AY field
-        # valid numbers range 0-9
+        # Get a sequence number for the AY field. Valid numbers range 0-9.
         self._seq += 1;
         if (self._seq > 9): self._seq = 0
         return (self._seq);
@@ -385,6 +396,7 @@ class Sip2:
 
     def connect(self):
         """ Open a socket connection to a backend SIP2 system, enable TLS via property
+        @see https://docs.python.org/3/library/exceptions.html#os-exceptionss
         @todo Improvements
             - Save and reuse self signed certificates and/or give means to provide ca file
             - PHP 5.6+ has context option "allow_self_signed" - check if Python adds it too later on
@@ -400,7 +412,6 @@ class Sip2:
         if isinstance(self.hostPort, int) == False or int(self.hostPort < 1):
             raise ValueError("Cannot autoconnect. No port set (parameter: hostPort) or not a valid integer: '%s'" % self.hostPort)
 
-
         self.log.info("--- BEGIN SIP communication ---")
         mode = False
 
@@ -411,11 +422,15 @@ class Sip2:
             plain.connect((self.hostName, self.hostPort))
             self.log.info("--- SOCKET EXISTS ---")
             mode = 'plain'
-        except socket.timeout:
+        except socket.timeout as e:
             self.log.critical("--- CONNECTION ERROR: Host not reachable. ---")
-            sys.exit(1)
+            raise ConnectionError('Connection error: TCP') from e
         except socket.error as e:
-            """Socket exceptions suck, because they may vary by OS?"""
+            """Socket exceptions suck, because they may vary by OS?
+            Anyway, all errors 'might' be just caused by a temporarily downtime 
+            of the server. The best action for any implementation on a 
+            ConnectionError 'should' be a reconnect attempt.
+            """
             #print (str(e.errno) + ' ' + e.strerror)
             if (e.errno == 10061 or e.strerror.find('refused') > 0):
                 self.log.critical("--- CONNECTION ERROR: Possibly wrong port. %s ---" % e)
@@ -427,8 +442,8 @@ class Sip2:
                 self.log.critical("--- CONNECTION ERROR: Host not reachable. %s ---" % e)
             else:
                 self.log.critical("--- CONNECTION ERROR: I got no clue. %s ---" % e)
-            print (self.log)
-            sys.exit(1)
+            raise ConnectionError('Connection error: TCP') from e
+            #sys.exit(1)
 
         # return socket if TLS is explicitly disabled
         if (self.tlsEnable == False):
@@ -528,6 +543,7 @@ class Sip2:
             return True
         else:
             self.log.critical("--- CONNECTION FAILED ---")
+            raise ConnectionError('Connection error: TLS')
             return False
 
 
@@ -547,11 +563,18 @@ class Sip2:
 
     def get_response (self, request):
         """ Send a message to the backend SIP2 system and read response
+        @todo Should this class offer any options to handle disconnects? I think
+              it's better to keep this class "dumb" and let it handle the actual
+              user if either a ConnectionResetError or a ConnectionError happens.
         @param  string request     The request text to send to the backend system
         @return string|false       Raw string response returned from the backend system (response)
         """
         # Set user defined socket timeout
-        self._socket.settimeout(self.socketTimeout)
+        try:
+            self._socket.settimeout(self.socketTimeout)
+        # If _connect is not initialized then no (sucessful) connection was ever initiated
+        except AttributeError as e:
+            raise ConnectionError('Connection error: You must make a sucessful connection attempt before sending commands!') from e
 
         self.log.info("--- SENDING REQUEST --- \n%s" % request)
         try:
@@ -560,6 +583,12 @@ class Sip2:
             self.log.info("--- REQUEST SENT, WAITING FOR RESPONSE ---")
         except socket.error as e:
             self.log.warning("--- SENDING REQUEST FAILED --- \n%s" % e)
+            raise ConnectionResetError('Connection reset: Most likely connection was lost. %s' % e) from e
+            # HERE > NEW TRY > CONNECT AGAIN!?! (
+            # if self_socket != None:
+            #     connect mit https://julien.danjou.info/blog/2017/python-tenacity
+            # else:
+            #     raise runtime-or-so("Please connect before sending requests")
             #sys.exit()
 
         # \x0A is the escaped hexadecimal Line Feed. The equivalent of \n.
@@ -584,7 +613,11 @@ class Sip2:
             else:
                 # give up
                 self.log.critical("--- Failed to get valid CRC --- after (%s) retries." % self._retryCount)
-                return False
+                # This might be a bit tricky should a CRC really ever fail.
+                # Most likely it's best to indicate that a reconnect probably is
+                # the best choice bei raising a ConnectionError.
+                raise ConnectionError('Connection error: Failed to get valid CRC for response') from e
+                #return False
 
         # Keep last message and response as property
         self.last_request  = request
@@ -813,13 +846,15 @@ class Sip2:
         """
         if (feeType > 99 or feeType < 1):
             # not a valid fee type - exit
-            self.log.error("(sip_fee_paid_request) Invalid fee type: %s" % feeType)
-            return False
+            error = "(sip_fee_paid_request) Invalid fee type: %s" % feeType
+            self.log.error(error)
+            raise ValueError(error)
 
         if (paymentType > 99 or paymentType < 0):
             # not a valid payment type - exit
-            self.log.error("(sip_fee_paid_request) Invalid payment type: %s" % feeType)
-            return False
+            error = "(sip_fee_paid_request) Invalid payment type: %s" % feeType
+            self.log.error(error)
+            raise ValueError(error)
 
         self._request_new('37');
         self._request_addOpt_fixed(self._datestamp(), 18);
@@ -880,16 +915,18 @@ class Sip2:
         """
         if (holdMode == '' or (holdMode in '-+*') == False):
             # not a valid mode - exit
-            self.log.error( self._version + ": Invalid hold mode: %s" % holdMode)
-            return False
+            error = self._version + ": Invalid hold mode: %s" % holdMode
+            self.log.error(error)
+            raise ValueError(error)
 
         """ Valid hold types range from 1 - 9
         1   other        2   any copy of title        3   specific copy
         4   any copy at a single branch or location
         """
         if (holdType != '' and (holdType < 1 or holdType > 9)):
-            self.log.error( self._version + ": Invalid hold type code: %s" % holdType)
-            return False
+            error = self._version + ": Invalid hold type code: %s" % holdType
+            self.log.error(error)
+            raise ValueError(error)
 
         self._request_new('15')
         self._request_addOpt_fixed(holdMode, 1)
@@ -1199,8 +1236,8 @@ class Sip2:
         """ Generate Patron Status (code 23) request messages in sip2 format
         @return string         SIP2 request message
         
-        @note This message requires a patron password. If possble (not Sip1) use
-        the advanced version sip_patron_information_request() (63) 
+        @note This message requires a patron password. If possible (not Sip1) 
+        use the advanced version sip_patron_information_request() (63) 
         @note SIP2 Protocol definition document:        
         This message is used by the SC to request patron information from the 
         ACS. The ACS must respond to this command with a Patron Status Response 
@@ -1223,8 +1260,8 @@ class Sip2:
         @param  string response    response string from the SIP2 backend
         @return array              parsed SIP2 response message
         
-        @note This message requires a patron password. If possble (not Sip1) use
-        the advanced version sip_patron_information_response() (64) 
+        @note This message requires a patron password. If possible (not Sip1) 
+        use the advanced version sip_patron_information_response() (64) 
         @note SIP2 Protocol definition document:        
         The ACS must send this message in response to a Patron Status Request 
         message as well as in response to a Block Patron message.
@@ -1388,8 +1425,9 @@ class Sip2:
             99<status code><max print width><protocol version>
         """
         if (statusCode < 0 or statusCode > 2):
-            self.log.error("Invalid status code passed to sip_sc_status_request")
-            return False
+            error = "Invalid status code passed to sip_sc_status_request"
+            self.log.error(error)
+            raise ValueError(error)
 
         self._request_new('99')
         self._request_addOpt_fixed(statusCode, 1)

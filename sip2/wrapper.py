@@ -134,14 +134,20 @@ class Sip2Wrapper:
         finally:
             print ('Sip2Wrapper object unset')       
 
+    def __exit__(self):
+        """ Reset everything, make sure client is disconnected """
+        try:
+            self.disconnect()
+        finally:
+            print ('Sip2Wrapper object unset')       
 
     def connect(self):
         """ Connect to the server
-        @throws Exception if connection fails
+        @throws Exception if connection fails. You have to handle what happens next
         @return boolean returns true if connection succeeds
         """
         self._connected = self._sip2.connect()
-
+        
         # You might check via debug output or the log file what went wrong
         return self._connected
 
@@ -176,7 +182,7 @@ class Sip2Wrapper:
             self.sip_sc_status()
             # Check status
             if (self._scStatus['fixed']['OnlineStatus'] != 'Y'):
-                raise RuntimeError('ACS Offline')
+                raise ConnectionError('ACS Offline')
             else:                
                 return True
 
@@ -564,6 +570,9 @@ class Sip2Wrapper:
 
     def sip_patron_information(self, infoType = 'none'):
         """ Worker function to call out to sip2 server and grab patron information (code 64/65)
+        @todo 2017-05-21: Probably best to remove the lines returning the 
+              cached information. Or keep track if some circulation action 
+              might have changed the information.
         @param string infoType     One of 'none', 'hold', 'overdue', 'charged', 'fine', 'recall', or 'unavail'
         @throws Exception if startPatronSession has not been called with success prior to calling this
         @return array              The parsed response from the server
