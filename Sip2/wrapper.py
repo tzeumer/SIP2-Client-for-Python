@@ -105,11 +105,11 @@ class Sip2Wrapper:
         
         """ Begin initialization """
         if version == 'Sip2':
-            from sip2.sip2 import Sip2
+            from Sip2.sip2 import Sip2
             sip2 = Sip2()
         elif version == 'Gossip':
-            from sip2.sip2 import Gossip
-            sip2 = Gossip()        
+            from Sip2.sip2 import Gossip
+            sip2 = Gossip()
         else:
             raise RuntimeError('Version can only be Sip2 or Gossip')
 
