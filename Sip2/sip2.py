@@ -572,9 +572,9 @@ class Sip2:
         # Set user defined socket timeout
         try:
             self._socket.settimeout(self.socketTimeout)
-        # If _connect is not initialized then no (sucessful) connection was ever initiated
+        # If _connect is not initialized then no (successful) connection was ever initiated
         except AttributeError as e:
-            raise ConnectionError('Connection error: You must make a sucessful connection attempt before sending commands!') from e
+            raise ConnectionError('Connection error: You must make a successful connection attempt before sending commands!') from e
 
         self.log.info("--- SENDING REQUEST --- \n%s" % request)
         try:
