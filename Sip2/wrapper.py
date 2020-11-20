@@ -124,7 +124,8 @@ class Sip2Wrapper:
         self._sip2 = sip2
         
         if autoConnect:
-            self.connect()
+            if not self.connect():
+                raise RuntimeError('Error connecting to SIP server')
 
 
     def __del__(self):
