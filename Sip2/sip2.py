@@ -531,6 +531,12 @@ class Sip2:
         """ Finish connection """
         if (mode == 'plain'):
             self.log.warning("--- CONNECTION ESTABLISHED: Unencrypted ---")
+            # the plain connection may have been closed when attempting TLS. Reconnect if this happens.
+            if plain.fileno() == -1:
+                plain = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                plain.connect((self.hostName, self.hostPort))
+                plain.settimeout(self.socketTimeout)
+
             self._socket = plain
             return True
         elif (mode == 'tls'):
