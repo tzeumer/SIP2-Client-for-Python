@@ -1,5 +1,5 @@
 import pprint
-from sip2.sip2 import Gossip
+from Sip2.sip2 import Gossip
 
 pp = pprint.PrettyPrinter(indent=4)
 
