@@ -45,7 +45,7 @@ class Sip2Wrapper:
     @example 2: And now a complete initialization example (with reduced config 
     options - you probably won't change most of the defaults anyway).
     
-    from sip2.wrapper import Sip2Wrapper
+    from Sip2.wrapper import Sip2Wrapper
     sip2Params = {
         'hostName'       : 'my-asc.ils.net',
         'hostPort'       : 1294,
