@@ -2,9 +2,10 @@ from setuptools import setup
 
 setup (
     name='Sip2',
-    version='1.0',
+    version='1.1',
     description='SIP2 Python Client: Simple Interchange Protocol Client for Python',
     long_description=open('README.md').read(),
+    long_description_content_type='text/markdown',
     author='Tobias Zeumer',
     author_email='tzeumer@verweisungsform.de',
     url='https://github.com/tzeumer/SIP2-Client-for-Python',
