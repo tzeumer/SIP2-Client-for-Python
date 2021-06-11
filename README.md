@@ -27,4 +27,4 @@ Gossip is short for "Good Old Server for Standard Interchange Protocol". Gossip 
 Note: Sadly no official documentation for Gossip is available online. You can only contact the developer via https://www.gbv.de/Verbundzentrale/serviceangebote/gossip-service-der-vzg
 
 # Source
-The primary source is at https://github.com/tzeumer/SIP2-Client-for-Python. There is also a package at pypi.org: https://packaging.python.org/tutorials/packaging-projects/. It's the only one I ever released, so I have to figure out the process every time - an might forget it completely ;)
+The primary source is at https://github.com/tzeumer/SIP2-Client-for-Python. There is also a package at pypi.org: https://pypi.org/project/Sip2/. It's the only one I ever released, so I have to figure out the process every time - an might forget it completely ;)
